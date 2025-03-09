@@ -35,6 +35,23 @@ class CameraHMRPredictor(HMR2018Predictor):
         hmar_out = self.hmar_old(x)
         B, _, H, W = x.shape
 
+        log.info(f"Input x shape: {x.shape}")
+        log.info(f"Input x type: {type(x)}")
+        log.info(f"Input x device: {x.device}")
+
+        import cv2
+        import os
+
+        log.info(f"Input x shape: {x.shape}")
+    
+        # Save first image in batch for debugging
+        os.makedirs("debug", exist_ok=True)
+        for i in range(min(x.shape[0], 3)):  # Save up to 3 images from batch
+            img = (x[i, :3].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
+            cv2.imwrite(f'debug/input_image_{i}.jpg', cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
+
+
         img_cv2 = (x[:, :3].permute(0, 2, 3, 1) * 255).cpu().numpy().astype(np.uint8)
         det_out = self.estimator.detector(img_cv2)
         det_instances = det_out['instances']
@@ -52,7 +69,11 @@ class CameraHMRPredictor(HMR2018Predictor):
             'box_center': torch.tensor([[W/2, H/2]] * B, device=x.device),  # Center of the image
             'box_size': torch.tensor([max(H, W)] * B, device=x.device),     # Size of the box
             'img_size': torch.tensor([[H, W]] * B, device=x.device),        # Original image size
-            'cam_int': torch.tensor([cam_int], device=x.device)
+            'cam_int': torch.tensor([[                        # Default camera intrinsics
+                [5000.0, 0.0, W/2],
+                [0.0, 5000.0, H/2],
+                [0.0, 0.0, 1.0]
+            ]] * B, device=x.device)
         }
 
         pred_smpl_params, pred_cam, _ = self.model(batch)
