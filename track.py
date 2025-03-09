@@ -33,21 +33,26 @@ class CameraHMRPredictor(HMR2018Predictor):
 
     def forward(self, x):
         hmar_out = self.hmar_old(x)
-
         B, _, H, W = x.shape
-        
-        # Create a complete batch with all required fields
+
+        img_cv2 = (x[:, :3].permute(0, 2, 3, 1) * 255).cpu().numpy().astype(np.uint8)
+        det_out = self.estimator.detector(img_cv2)
+        det_instances = det_out['instances']
+        valid_idx = (det_instances.pred_classes == 0) & (det_instances.scores > 0.5)
+        boxes = det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
+        bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0 
+        bbox_center = (boxes[:, 2:4] + boxes[:, 0:2]) / 2.0
+
+        # Get Camera intrinsics using HumanFoV Model
+        cam_int = self.estimator.get_cam_intrinsics(img_cv2)
+
+
         batch = {
             'img': x[:, :3, :, :],                           # RGB channels
-            'mask': torch.clamp(x[:, 3, :, :], 0, 1),        # Mask channel
             'box_center': torch.tensor([[W/2, H/2]] * B, device=x.device),  # Center of the image
             'box_size': torch.tensor([max(H, W)] * B, device=x.device),     # Size of the box
             'img_size': torch.tensor([[H, W]] * B, device=x.device),        # Original image size
-            'cam_int': torch.tensor([[                        # Default camera intrinsics
-                [5000.0, 0.0, W/2],
-                [0.0, 5000.0, H/2],
-                [0.0, 0.0, 1.0]
-            ]] * B, device=x.device)
+            'cam_int': torch.tensor([cam_int], device=x.device)
         }
 
         pred_smpl_params, pred_cam, _ = self.model(batch)
